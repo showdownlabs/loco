@@ -1,0 +1,270 @@
+"""Chat and conversation management for loco."""
+
+import json
+import os
+from dataclasses import dataclass, field
+from typing import Any, Generator
+
+import litellm
+from rich.console import Console
+from rich.markdown import Markdown
+
+# Drop unsupported params for models that don't support them (e.g., tool_choice on Bedrock Mistral)
+litellm.drop_params = True
+
+from loco.config import Config, get_provider_config
+from loco.ui.components import Spinner, StreamingMarkdown, ToolPanel
+
+
+@dataclass
+class Message:
+    """A chat message."""
+
+    role: str  # "system", "user", "assistant", "tool"
+    content: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
+    name: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to LiteLLM message format."""
+        msg: dict[str, Any] = {"role": self.role}
+
+        if self.content is not None:
+            msg["content"] = self.content
+        if self.tool_calls:
+            msg["tool_calls"] = self.tool_calls
+        if self.tool_call_id:
+            msg["tool_call_id"] = self.tool_call_id
+        if self.name:
+            msg["name"] = self.name
+
+        return msg
+
+
+@dataclass
+class ToolCall:
+    """A parsed tool call from the LLM response."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class Conversation:
+    """Manages a conversation with message history."""
+
+    messages: list[Message] = field(default_factory=list)
+    model: str = ""
+    config: Config | None = None
+
+    def add_system_message(self, content: str) -> None:
+        """Add or update the system message."""
+        # Remove existing system message if present
+        self.messages = [m for m in self.messages if m.role != "system"]
+        # Add new system message at the beginning
+        self.messages.insert(0, Message(role="system", content=content))
+
+    def add_user_message(self, content: str) -> None:
+        """Add a user message."""
+        self.messages.append(Message(role="user", content=content))
+
+    def add_assistant_message(
+        self,
+        content: str | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Add an assistant message."""
+        self.messages.append(Message(
+            role="assistant",
+            content=content,
+            tool_calls=tool_calls,
+        ))
+
+    def add_tool_result(self, tool_call_id: str, name: str, result: str) -> None:
+        """Add a tool result message."""
+        self.messages.append(Message(
+            role="tool",
+            content=result,
+            tool_call_id=tool_call_id,
+            name=name,
+        ))
+
+    def get_messages(self) -> list[dict[str, Any]]:
+        """Get messages in LiteLLM format."""
+        return [m.to_dict() for m in self.messages]
+
+    def clear(self) -> None:
+        """Clear conversation history, keeping system message."""
+        system_msg = next((m for m in self.messages if m.role == "system"), None)
+        self.messages = []
+        if system_msg:
+            self.messages.append(system_msg)
+
+
+def get_default_system_prompt(cwd: str) -> str:
+    """Get the default system prompt for loco."""
+    return f"""You are a helpful coding assistant running in a terminal. You help users with software engineering tasks.
+
+Current working directory: {cwd}
+
+You have access to tools for reading, writing, and editing files, as well as running bash commands.
+
+Guidelines:
+- Be concise and direct in your responses
+- When reading or modifying files, always use the appropriate tools
+- Explain what you're doing when using tools
+- If you're unsure about something, ask for clarification
+- Format code blocks with appropriate language tags for syntax highlighting
+- When showing file paths, use absolute paths when possible
+
+Available tools:
+- read: Read file contents
+- write: Write content to a file (creates or overwrites)
+- edit: Edit a file by replacing a specific string
+- bash: Execute a bash command"""
+
+
+def stream_response(
+    conversation: Conversation,
+    tools: list[dict[str, Any]] | None = None,
+    console: Console | None = None,
+) -> Generator[str | ToolCall, None, None]:
+    """Stream a response from the LLM.
+
+    Yields:
+        str chunks for text content
+        ToolCall objects when the LLM wants to call a tool
+    """
+    # Build kwargs for litellm
+    kwargs: dict[str, Any] = {
+        "model": conversation.model,
+        "messages": conversation.get_messages(),
+        "stream": True,
+    }
+
+    # Add provider-specific config
+    if conversation.config:
+        provider_config = get_provider_config(conversation.model, conversation.config)
+        kwargs.update(provider_config)
+
+    # Add tools if provided
+    if tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
+
+    # Make the streaming call
+    response = litellm.completion(**kwargs)
+
+    # Track accumulated content and tool calls
+    content_chunks: list[str] = []
+    tool_calls_data: dict[int, dict[str, Any]] = {}
+
+    for chunk in response:
+        delta = chunk.choices[0].delta if chunk.choices else None
+
+        if delta is None:
+            continue
+
+        # Handle content
+        if delta.content:
+            content_chunks.append(delta.content)
+            yield delta.content
+
+        # Handle tool calls
+        if delta.tool_calls:
+            for tc in delta.tool_calls:
+                idx = tc.index
+                if idx not in tool_calls_data:
+                    tool_calls_data[idx] = {
+                        "id": "",
+                        "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    }
+
+                if tc.id:
+                    tool_calls_data[idx]["id"] = tc.id
+                if tc.function:
+                    if tc.function.name:
+                        tool_calls_data[idx]["function"]["name"] = tc.function.name
+                    if tc.function.arguments:
+                        tool_calls_data[idx]["function"]["arguments"] += tc.function.arguments
+
+    # After streaming, add the assistant message to conversation
+    full_content = "".join(content_chunks) if content_chunks else None
+    tool_calls_list = list(tool_calls_data.values()) if tool_calls_data else None
+
+    if full_content or tool_calls_list:
+        conversation.add_assistant_message(
+            content=full_content,
+            tool_calls=tool_calls_list,
+        )
+
+    # Yield tool calls
+    for tc_data in tool_calls_data.values():
+        try:
+            arguments = json.loads(tc_data["function"]["arguments"])
+        except json.JSONDecodeError:
+            arguments = {}
+
+        yield ToolCall(
+            id=tc_data["id"],
+            name=tc_data["function"]["name"],
+            arguments=arguments,
+        )
+
+
+def chat_turn(
+    conversation: Conversation,
+    user_input: str,
+    tools: list[dict[str, Any]] | None,
+    tool_executor: Any,  # Callable[[ToolCall], str]
+    console: Console,
+) -> None:
+    """Execute a single chat turn with potential tool calls.
+
+    This handles:
+    1. Adding user message
+    2. Streaming LLM response
+    3. Executing any tool calls
+    4. Continuing conversation if tools were called
+    """
+    from loco.ui.components import StreamingMarkdown
+
+    conversation.add_user_message(user_input)
+
+    while True:
+        # Stream the response
+        tool_calls: list[ToolCall] = []
+        content_buffer = ""
+
+        with StreamingMarkdown(console) as stream:
+            for item in stream_response(conversation, tools, console):
+                if isinstance(item, str):
+                    content_buffer += item
+                    stream.append(item)
+                elif isinstance(item, ToolCall):
+                    tool_calls.append(item)
+
+        # If no tool calls, we're done
+        if not tool_calls:
+            break
+
+        # Execute tool calls
+        for tc in tool_calls:
+            ToolPanel.tool_call(tc.name, tc.arguments, console)
+
+            try:
+                result = tool_executor(tc)
+                success = True
+            except Exception as e:
+                result = f"Error: {e}"
+                success = False
+
+            ToolPanel.tool_result(tc.name, result, success, console)
+
+            # Add tool result to conversation
+            conversation.add_tool_result(tc.id, tc.name, result)
+
+        # Continue the loop to get the LLM's response to tool results
