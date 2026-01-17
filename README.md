@@ -6,9 +6,11 @@ A Claude Code-inspired CLI for any OpenAI-compatible LLM via LiteLLM.
 
 - **Multi-provider support**: OpenAI, Amazon Bedrock, OpenRouter, Ollama, LM Studio, and any LiteLLM-supported provider
 - **Streaming responses**: Real-time token streaming with markdown rendering
-- **Built-in tools**: Read, Write, Edit files and execute Bash commands
+- **Built-in tools**: Read, Write, Edit, Bash, Glob, Grep
+- **Session persistence**: Save and load conversations
 - **Secure**: No external server - direct API calls only, config file permissions enforced
 - **Model aliases**: Define shortcuts for frequently used models
+- **Retry logic**: Automatic retries for transient API errors
 
 ## Installation
 
@@ -71,6 +73,9 @@ loco --cwd /path/to/project
 | `/help` | Show available commands |
 | `/model [name]` | Show or switch current model |
 | `/clear` | Clear conversation history |
+| `/save [name]` | Save current conversation |
+| `/load <id>` | Load a saved conversation |
+| `/sessions` | List saved sessions |
 | `/config` | Show config file path |
 | `/quit` | Exit (or Ctrl+C) |
 
@@ -94,6 +99,8 @@ loco includes these built-in tools:
 - **write**: Create or overwrite files
 - **edit**: Edit files via string replacement
 - **bash**: Execute shell commands
+- **glob**: Find files by pattern (e.g., `**/*.py`)
+- **grep**: Search file contents with regex
 
 ## License
 

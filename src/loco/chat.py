@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any, Generator
 
@@ -11,6 +12,16 @@ from rich.markdown import Markdown
 
 # Drop unsupported params for models that don't support them (e.g., tool_choice on Bedrock Mistral)
 litellm.drop_params = True
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_DELAY = 1.0  # seconds
+RETRY_BACKOFF = 2.0  # multiplier for exponential backoff
+
+
+class APIError(Exception):
+    """Raised when API call fails after retries."""
+    pass
 
 from loco.config import Config, get_provider_config
 from loco.ui.components import Spinner, StreamingMarkdown, ToolPanel
@@ -123,7 +134,9 @@ Available tools:
 - read: Read file contents
 - write: Write content to a file (creates or overwrites)
 - edit: Edit a file by replacing a specific string
-- bash: Execute a bash command"""
+- bash: Execute a bash command
+- glob: Find files matching a pattern (e.g., '**/*.py')
+- grep: Search file contents with regex"""
 
 
 def stream_response(
@@ -154,8 +167,26 @@ def stream_response(
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"
 
-    # Make the streaming call
-    response = litellm.completion(**kwargs)
+    # Make the streaming call with retry logic
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = litellm.completion(**kwargs)
+            break
+        except (litellm.RateLimitError, litellm.ServiceUnavailableError) as e:
+            last_error = e
+            if attempt < MAX_RETRIES - 1:
+                delay = RETRY_DELAY * (RETRY_BACKOFF ** attempt)
+                time.sleep(delay)
+                continue
+            raise APIError(f"API call failed after {MAX_RETRIES} retries: {e}") from e
+        except litellm.APIConnectionError as e:
+            last_error = e
+            if attempt < MAX_RETRIES - 1:
+                delay = RETRY_DELAY * (RETRY_BACKOFF ** attempt)
+                time.sleep(delay)
+                continue
+            raise APIError(f"Connection error after {MAX_RETRIES} retries: {e}") from e
 
     # Track accumulated content and tool calls
     content_chunks: list[str] = []
@@ -230,7 +261,7 @@ def chat_turn(
     3. Executing any tool calls
     4. Continuing conversation if tools were called
     """
-    from loco.ui.components import StreamingMarkdown
+    from loco.ui.components import StreamingMarkdown, Spinner
 
     conversation.add_user_message(user_input)
 
@@ -238,14 +269,29 @@ def chat_turn(
         # Stream the response
         tool_calls: list[ToolCall] = []
         content_buffer = ""
+        first_token = True
 
-        with StreamingMarkdown(console) as stream:
-            for item in stream_response(conversation, tools, console):
-                if isinstance(item, str):
-                    content_buffer += item
-                    stream.append(item)
-                elif isinstance(item, ToolCall):
-                    tool_calls.append(item)
+        # Show spinner while waiting for first token
+        spinner = Spinner(console, "Thinking...")
+        spinner.__enter__()
+
+        try:
+            with StreamingMarkdown(console) as stream:
+                for item in stream_response(conversation, tools, console):
+                    # Hide spinner on first content
+                    if first_token:
+                        spinner.__exit__(None, None, None)
+                        first_token = False
+
+                    if isinstance(item, str):
+                        content_buffer += item
+                        stream.append(item)
+                    elif isinstance(item, ToolCall):
+                        tool_calls.append(item)
+        finally:
+            # Ensure spinner is closed if no content received
+            if first_token:
+                spinner.__exit__(None, None, None)
 
         # If no tool calls, we're done
         if not tool_calls:

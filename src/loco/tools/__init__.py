@@ -5,6 +5,8 @@ from loco.tools.read import ReadTool
 from loco.tools.write import WriteTool
 from loco.tools.edit import EditTool
 from loco.tools.bash import BashTool
+from loco.tools.glob import GlobTool
+from loco.tools.grep import GrepTool
 
 __all__ = [
     "Tool",
@@ -14,4 +16,6 @@ __all__ = [
     "WriteTool",
     "EditTool",
     "BashTool",
+    "GlobTool",
+    "GrepTool",
 ]

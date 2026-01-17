@@ -18,6 +18,11 @@ from loco.config import (
 )
 from loco.tools import tool_registry
 from loco.ui.console import get_console
+from loco.history import save_conversation, load_conversation, list_sessions
+
+
+# Track current session ID for auto-save
+_current_session_id: str | None = None
 
 
 def handle_slash_command(
@@ -27,6 +32,8 @@ def handle_slash_command(
     console: Console,
 ) -> bool:
     """Handle slash commands. Returns True if command was handled."""
+    global _current_session_id
+
     parts = command.strip().split(maxsplit=1)
     cmd = parts[0].lower()
     args = parts[1] if len(parts) > 1 else ""
@@ -35,11 +42,14 @@ def handle_slash_command(
         console.print("""
 [bold]Available Commands:[/bold]
 
-  [cyan]/help[/cyan]           Show this help message
-  [cyan]/clear[/cyan]          Clear conversation history
-  [cyan]/model[/cyan] [name]   Show or switch the current model
-  [cyan]/config[/cyan]         Show configuration file path
-  [cyan]/quit[/cyan]           Exit loco (or Ctrl+C)
+  [cyan]/help[/cyan]             Show this help message
+  [cyan]/clear[/cyan]            Clear conversation history
+  [cyan]/model[/cyan] [name]     Show or switch the current model
+  [cyan]/save[/cyan] [name]      Save current conversation
+  [cyan]/load[/cyan] <id>        Load a saved conversation
+  [cyan]/sessions[/cyan]         List saved sessions
+  [cyan]/config[/cyan]           Show configuration file path
+  [cyan]/quit[/cyan]             Exit loco (or Ctrl+C)
 
 [bold]Tips:[/bold]
 - Use model aliases from config (e.g., /model gpt4)
@@ -49,6 +59,7 @@ def handle_slash_command(
 
     elif cmd == "/clear":
         conversation.clear()
+        _current_session_id = None
         console.print("[dim]Conversation cleared.[/dim]")
         return True
 
@@ -65,6 +76,47 @@ def handle_slash_command(
             for alias, model in config.models.items():
                 marker = " [green]<-- current[/green]" if model == conversation.model else ""
                 console.print(f"  [cyan]{alias}[/cyan]: {model}{marker}")
+        return True
+
+    elif cmd == "/save":
+        name = args if args else None
+        session_id = save_conversation(conversation, _current_session_id, name)
+        _current_session_id = session_id
+        console.print(f"[dim]Saved as session: {session_id}[/dim]")
+        return True
+
+    elif cmd == "/load":
+        if not args:
+            console.print("[yellow]Usage: /load <session_id>[/yellow]")
+            console.print("[dim]Use /sessions to see available sessions[/dim]")
+            return True
+
+        loaded = load_conversation(args)
+        if loaded is None:
+            console.print(f"[red]Session not found: {args}[/red]")
+            return True
+
+        # Replace conversation content
+        conversation.messages = loaded.messages
+        if loaded.model:
+            conversation.model = loaded.model
+        _current_session_id = args
+        console.print(f"[dim]Loaded session: {args} ({len(conversation.messages)} messages)[/dim]")
+        return True
+
+    elif cmd == "/sessions":
+        sessions = list_sessions()
+        if not sessions:
+            console.print("[dim]No saved sessions found.[/dim]")
+            return True
+
+        console.print("[bold]Saved Sessions:[/bold]\n")
+        for s in sessions:
+            name_str = f" ({s['name']})" if s.get('name') else ""
+            console.print(
+                f"  [cyan]{s['session_id']}[/cyan]{name_str} - "
+                f"{s['message_count']} msgs, {s.get('model', 'unknown')}"
+            )
         return True
 
     elif cmd == "/config":
