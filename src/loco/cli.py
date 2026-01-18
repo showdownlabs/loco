@@ -21,6 +21,7 @@ from loco.ui.console import get_console
 from loco.history import save_conversation, load_conversation, list_sessions
 from loco.skills import skill_registry, get_skills_system_prompt_section, Skill
 from loco.hooks import HookConfig
+from loco.agents import agent_registry, run_agent
 
 
 # Track current session ID for auto-save
@@ -52,6 +53,8 @@ def handle_slash_command(
   [cyan]/model[/cyan] [name]     Show or switch the current model
   [cyan]/skill[/cyan] [name]     Activate a skill or list available skills
   [cyan]/skills[/cyan]           List all available skills
+  [cyan]/agent[/cyan] <name> <task>  Run a subagent with a task
+  [cyan]/agents[/cyan]           List all available agents
   [cyan]/save[/cyan] [name]      Save current conversation
   [cyan]/load[/cyan] <id>        Load a saved conversation
   [cyan]/sessions[/cyan]         List saved sessions
@@ -62,6 +65,7 @@ def handle_slash_command(
 - Use model aliases from config (e.g., /model gpt4)
 - Or use full LiteLLM model strings (e.g., /model openai/gpt-4o)
 - Skills are loaded from .loco/skills/ and ~/.config/loco/skills/
+- Agents are loaded from .loco/agents/ and ~/.config/loco/agents/
 """)
         return True
 
@@ -178,6 +182,60 @@ def handle_slash_command(
         console.print(f"[dim]Activated skill: {skill.name}[/dim]")
         return True
 
+    elif cmd in ("/agent", "/agents"):
+        agents = agent_registry.get_all()
+
+        if cmd == "/agents" or not args:
+            # List available agents
+            if not agents:
+                console.print("[dim]No agents found.[/dim]")
+                console.print("[dim]Add agents to .loco/agents/ or ~/.config/loco/agents/[/dim]")
+                return True
+
+            console.print("[bold]Available Agents:[/bold]\n")
+            for agent in agents:
+                tools_info = ""
+                if agent.allowed_tools:
+                    tools_info = f" [dim](tools: {', '.join(agent.allowed_tools)})[/dim]"
+                console.print(f"  [cyan]{agent.name}[/cyan]: {agent.description}{tools_info}")
+
+            console.print("\n[dim]Usage: /agent <name> <task>[/dim]")
+            return True
+
+        # Parse agent name and task
+        agent_parts = args.split(maxsplit=1)
+        agent_name = agent_parts[0]
+        task = agent_parts[1] if len(agent_parts) > 1 else ""
+
+        if not task:
+            console.print("[yellow]Usage: /agent <name> <task>[/yellow]")
+            console.print("[dim]Example: /agent explorer find all API endpoints[/dim]")
+            return True
+
+        # Find the agent
+        agent = agent_registry.get(agent_name)
+        if agent is None:
+            console.print(f"[red]Agent not found: {agent_name}[/red]")
+            console.print("[dim]Use /agents to see available agents[/dim]")
+            return True
+
+        # Run the agent
+        try:
+            result = run_agent(
+                agent=agent,
+                task=task,
+                config=config,
+                tool_registry=tool_registry,
+                console=console,
+            )
+            # Add a summary to the main conversation
+            conversation.add_user_message(f"[Agent '{agent_name}' completed task: {task}]")
+            conversation.add_assistant_message(f"Agent result:\n\n{result}")
+        except Exception as e:
+            console.print(f"[red]Agent error: {e}[/red]")
+
+        return True
+
     elif cmd == "/config":
         console.print(f"[dim]Config file: {get_config_path()}[/dim]")
         return True
@@ -229,8 +287,9 @@ def main(ctx: click.Context, model: str | None, cwd: str | None) -> None:
     # Resolve model
     effective_model = resolve_model(model or config.default_model, config)
 
-    # Discover skills
+    # Discover skills and agents
     skill_registry.discover()
+    agent_registry.discover()
     skills_section = get_skills_system_prompt_section()
 
     # Initialize UI
@@ -240,10 +299,16 @@ def main(ctx: click.Context, model: str | None, cwd: str | None) -> None:
     # Print welcome
     console.print_welcome(effective_model, os.getcwd())
 
-    # Show discovered skills count
+    # Show discovered skills and agents count
     skill_count = len(skill_registry.get_all())
+    agent_count = len(agent_registry.get_all())
+    info_parts = []
     if skill_count > 0:
-        console.print(f"[dim]{skill_count} skill(s) available. Use /skills to list.[/dim]\n")
+        info_parts.append(f"{skill_count} skill(s)")
+    if agent_count > 0:
+        info_parts.append(f"{agent_count} agent(s)")
+    if info_parts:
+        console.print(f"[dim]{', '.join(info_parts)} available.[/dim]\n")
 
     # Initialize conversation
     conversation = Conversation(

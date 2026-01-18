@@ -9,6 +9,7 @@ A Claude Code-inspired CLI for any OpenAI-compatible LLM via LiteLLM.
 - **Built-in tools**: Read, Write, Edit, Bash, Glob, Grep
 - **Skills system**: Reusable prompts that teach the LLM specific tasks
 - **Hooks**: Shell commands at lifecycle events (pre/post tool use)
+- **Agents**: Specialized subagents with isolated contexts and tool restrictions
 - **Session persistence**: Save and load conversations
 - **Secure**: No external server - direct API calls only, config file permissions enforced
 - **Model aliases**: Define shortcuts for frequently used models
@@ -221,6 +222,57 @@ See `examples/hooks/` for ready-to-use hooks:
 - **block-dangerous-commands.sh**: Blocks `rm -rf /`, fork bombs, etc.
 - **format-on-write.sh**: Auto-formats files with black/prettier/gofmt
 - **lint-on-write.sh**: Runs linters and reports issues
+
+## Agents
+
+Agents are specialized AI assistants with isolated contexts and restricted tools. Use them for focused tasks.
+
+### Creating an Agent
+
+Create a markdown file at `.loco/agents/agent-name.md` or `~/.config/loco/agents/agent-name.md`:
+
+```markdown
+---
+name: explorer
+description: Fast codebase exploration
+tools: read, glob, grep
+model: haiku
+---
+
+# Explorer Agent
+
+You are a fast codebase exploration agent...
+```
+
+### Agent Options
+
+| Option | Description |
+|--------|-------------|
+| `name` | Agent identifier |
+| `description` | When to use this agent |
+| `tools` | Allowed tools (allowlist) |
+| `disallowed-tools` | Blocked tools (denylist) |
+| `model` | Model override (alias or full name) |
+
+### Using Agents
+
+```bash
+# List available agents
+/agents
+
+# Run an agent with a task
+/agent explorer find all API endpoints
+/agent planner design user authentication
+```
+
+### Example Agents
+
+See `examples/agents/` for ready-to-use agents:
+- **explorer**: Fast codebase exploration (read-only)
+- **planner**: Implementation planning (no write access)
+- **refactor**: Safe code refactoring
+
+Copy them to `.loco/agents/` or `~/.config/loco/agents/` to use.
 
 ## License
 
