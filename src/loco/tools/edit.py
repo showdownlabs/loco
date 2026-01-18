@@ -1,9 +1,31 @@
 """Edit file tool for loco."""
 
+import difflib
 from pathlib import Path
 from typing import Any
 
 from loco.tools.base import Tool, tool_registry
+
+
+def generate_diff(old_string: str, new_string: str, context_lines: int = 3) -> str:
+    """Generate a unified diff between old and new strings."""
+    old_lines = old_string.splitlines(keepends=True)
+    new_lines = new_string.splitlines(keepends=True)
+
+    # Ensure both end with newlines for clean diff
+    if old_lines and not old_lines[-1].endswith('\n'):
+        old_lines[-1] += '\n'
+    if new_lines and not new_lines[-1].endswith('\n'):
+        new_lines[-1] += '\n'
+
+    diff = difflib.unified_diff(
+        old_lines,
+        new_lines,
+        lineterm='',
+        n=context_lines,
+    )
+
+    return ''.join(diff)
 
 
 class EditTool(Tool):
@@ -103,6 +125,9 @@ class EditTool(Tool):
             new_content = content.replace(old_string, new_string, 1)
             replaced_count = 1
 
+        # Generate diff for display
+        diff = generate_diff(old_string, new_string)
+
         # Write back
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -110,7 +135,8 @@ class EditTool(Tool):
         except Exception as e:
             return f"Error writing file: {e}"
 
-        return f"Replaced {replaced_count} occurrence(s) in {path}"
+        # Return with diff
+        return f"✓ {path}\n{diff}"
 
 
 # Register the tool

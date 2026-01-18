@@ -29,8 +29,10 @@ class Console:
         history_dir.mkdir(parents=True, exist_ok=True)
         history_file = history_dir / "prompt_history"
 
+        # Claude Code-style prompt: bold > with subtle styling
         self.prompt_style = Style.from_dict({
-            "prompt": "bold cyan",
+            "prompt": "bold ansibrightcyan",
+            "prompt-suffix": "",
         })
 
         self.prompt_session: PromptSession[str] = PromptSession(
@@ -86,8 +88,9 @@ class Console:
     def get_input(self, prompt: str = "> ") -> str | None:
         """Get user input with prompt toolkit."""
         try:
+            # Use formatted prompt with style
             return self.prompt_session.prompt(
-                [("class:prompt", prompt)],
+                [("class:prompt", prompt), ("", " ")],
             )
         except (EOFError, KeyboardInterrupt):
             return None

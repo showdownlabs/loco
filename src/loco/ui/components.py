@@ -59,6 +59,35 @@ class ToolDisplay:
         return ""
 
     @staticmethod
+    def _is_diff_output(result: str) -> bool:
+        """Check if result looks like a diff."""
+        lines = result.split('\n')
+        return any(line.startswith('@@') or line.startswith('---') or line.startswith('+++') for line in lines[:10])
+
+    @staticmethod
+    def _format_diff(result: str, console: Console) -> None:
+        """Format and print a diff with colors."""
+        for line in result.split('\n'):
+            if line.startswith('✓ '):
+                # Success header
+                console.print(f"  [green]{line}[/green]")
+            elif line.startswith('@@'):
+                # Hunk header
+                console.print(f"  [cyan]{line}[/cyan]")
+            elif line.startswith('+') and not line.startswith('+++'):
+                # Added line
+                console.print(f"  [green]{line}[/green]")
+            elif line.startswith('-') and not line.startswith('---'):
+                # Removed line
+                console.print(f"  [red]{line}[/red]")
+            elif line.startswith('---') or line.startswith('+++'):
+                # File headers (skip for cleaner output)
+                pass
+            elif line.strip():
+                # Context line
+                console.print(f"  [dim]{line}[/dim]")
+
+    @staticmethod
     def tool_call(name: str, arguments: dict[str, Any], console: Console) -> None:
         """Display a minimal tool call line."""
         primary = ToolDisplay._format_primary_arg(name, arguments)
@@ -74,6 +103,11 @@ class ToolDisplay:
             # Show errors prominently
             console.print(f"  [red]✗[/red] [dim]{result[:200]}[/dim]")
         elif result and len(result.strip()) > 0:
+            # Check if this is a diff (from edit tool)
+            if ToolDisplay._is_diff_output(result):
+                ToolDisplay._format_diff(result, console)
+                return
+
             # For successful results, show a brief summary
             lines = result.strip().split("\n")
             if len(lines) == 1 and len(lines[0]) < 80:
