@@ -7,6 +7,7 @@ A Claude Code-inspired CLI for any OpenAI-compatible LLM via LiteLLM.
 - **Multi-provider support**: OpenAI, Amazon Bedrock, OpenRouter, Ollama, LM Studio, and any LiteLLM-supported provider
 - **Streaming responses**: Real-time token streaming with markdown rendering
 - **Built-in tools**: Read, Write, Edit, Bash, Glob, Grep
+- **Skills system**: Reusable prompts that teach the LLM specific tasks
 - **Session persistence**: Save and load conversations
 - **Secure**: No external server - direct API calls only, config file permissions enforced
 - **Model aliases**: Define shortcuts for frequently used models
@@ -72,6 +73,8 @@ loco --cwd /path/to/project
 |---------|-------------|
 | `/help` | Show available commands |
 | `/model [name]` | Show or switch current model |
+| `/skill [name]` | Activate a skill or list available skills |
+| `/skills` | List all available skills |
 | `/clear` | Clear conversation history |
 | `/save [name]` | Save current conversation |
 | `/load <id>` | Load a saved conversation |
@@ -101,6 +104,51 @@ loco includes these built-in tools:
 - **bash**: Execute shell commands
 - **glob**: Find files by pattern (e.g., `**/*.py`)
 - **grep**: Search file contents with regex
+
+## Skills
+
+Skills are reusable prompts that teach the LLM specific tasks. They're loaded from:
+- Project: `.loco/skills/skill-name/SKILL.md`
+- User: `~/.config/loco/skills/skill-name/SKILL.md`
+
+### Creating a Skill
+
+Create a markdown file with YAML frontmatter:
+
+```markdown
+---
+name: code-reviewer
+description: Reviews code for quality and best practices
+allowed-tools: read, grep, glob
+user-invocable: true
+---
+
+# Code Reviewer
+
+Instructions for the LLM when this skill is active...
+```
+
+### Using Skills
+
+```bash
+# List available skills
+/skills
+
+# Activate a skill
+/skill code-reviewer
+
+# Deactivate
+/skill off
+```
+
+### Example Skills
+
+See `examples/skills/` for ready-to-use skills:
+- **code-reviewer**: Reviews code for quality and issues
+- **test-writer**: Generates comprehensive tests
+- **debugger**: Helps debug issues systematically
+
+Copy them to `.loco/skills/` or `~/.config/loco/skills/` to use.
 
 ## License
 

@@ -19,10 +19,14 @@ from loco.config import (
 from loco.tools import tool_registry
 from loco.ui.console import get_console
 from loco.history import save_conversation, load_conversation, list_sessions
+from loco.skills import skill_registry, get_skills_system_prompt_section, Skill
 
 
 # Track current session ID for auto-save
 _current_session_id: str | None = None
+
+# Track active skill for current conversation
+_active_skill: Skill | None = None
 
 
 def handle_slash_command(
@@ -32,7 +36,7 @@ def handle_slash_command(
     console: Console,
 ) -> bool:
     """Handle slash commands. Returns True if command was handled."""
-    global _current_session_id
+    global _current_session_id, _active_skill
 
     parts = command.strip().split(maxsplit=1)
     cmd = parts[0].lower()
@@ -45,6 +49,8 @@ def handle_slash_command(
   [cyan]/help[/cyan]             Show this help message
   [cyan]/clear[/cyan]            Clear conversation history
   [cyan]/model[/cyan] [name]     Show or switch the current model
+  [cyan]/skill[/cyan] [name]     Activate a skill or list available skills
+  [cyan]/skills[/cyan]           List all available skills
   [cyan]/save[/cyan] [name]      Save current conversation
   [cyan]/load[/cyan] <id>        Load a saved conversation
   [cyan]/sessions[/cyan]         List saved sessions
@@ -54,12 +60,14 @@ def handle_slash_command(
 [bold]Tips:[/bold]
 - Use model aliases from config (e.g., /model gpt4)
 - Or use full LiteLLM model strings (e.g., /model openai/gpt-4o)
+- Skills are loaded from .loco/skills/ and ~/.config/loco/skills/
 """)
         return True
 
     elif cmd == "/clear":
         conversation.clear()
         _current_session_id = None
+        _active_skill = None
         console.print("[dim]Conversation cleared.[/dim]")
         return True
 
@@ -119,6 +127,56 @@ def handle_slash_command(
             )
         return True
 
+    elif cmd in ("/skill", "/skills"):
+        skills = skill_registry.get_user_invocable()
+
+        if not args or cmd == "/skills":
+            # List available skills
+            if not skills:
+                console.print("[dim]No skills found.[/dim]")
+                console.print("[dim]Add skills to .loco/skills/ or ~/.config/loco/skills/[/dim]")
+                return True
+
+            console.print("[bold]Available Skills:[/bold]\n")
+            for skill in skills:
+                active_marker = " [green]<-- active[/green]" if _active_skill and _active_skill.name == skill.name else ""
+                console.print(f"  [cyan]{skill.name}[/cyan]: {skill.description}{active_marker}")
+
+            if _active_skill:
+                console.print(f"\n[dim]Active skill: {_active_skill.name}[/dim]")
+                console.print("[dim]Use /skill off to deactivate[/dim]")
+            return True
+
+        # Activate or deactivate a skill
+        if args.lower() == "off":
+            if _active_skill:
+                console.print(f"[dim]Deactivated skill: {_active_skill.name}[/dim]")
+                _active_skill = None
+                # Rebuild system prompt without skill
+                conversation.add_system_message(
+                    get_default_system_prompt(os.getcwd(), get_skills_system_prompt_section())
+                )
+            else:
+                console.print("[dim]No active skill to deactivate[/dim]")
+            return True
+
+        # Find and activate the skill
+        skill = skill_registry.get(args)
+        if skill is None:
+            console.print(f"[red]Skill not found: {args}[/red]")
+            console.print("[dim]Use /skills to see available skills[/dim]")
+            return True
+
+        _active_skill = skill
+        # Update system prompt with skill content
+        skills_section = get_skills_system_prompt_section()
+        skills_section += skill.get_system_prompt_addition()
+        conversation.add_system_message(
+            get_default_system_prompt(os.getcwd(), skills_section)
+        )
+        console.print(f"[dim]Activated skill: {skill.name}[/dim]")
+        return True
+
     elif cmd == "/config":
         console.print(f"[dim]Config file: {get_config_path()}[/dim]")
         return True
@@ -170,6 +228,10 @@ def main(ctx: click.Context, model: str | None, cwd: str | None) -> None:
     # Resolve model
     effective_model = resolve_model(model or config.default_model, config)
 
+    # Discover skills
+    skill_registry.discover()
+    skills_section = get_skills_system_prompt_section()
+
     # Initialize UI
     console = get_console()
     rich_console = console.console
@@ -177,12 +239,17 @@ def main(ctx: click.Context, model: str | None, cwd: str | None) -> None:
     # Print welcome
     console.print_welcome(effective_model, os.getcwd())
 
+    # Show discovered skills count
+    skill_count = len(skill_registry.get_all())
+    if skill_count > 0:
+        console.print(f"[dim]{skill_count} skill(s) available. Use /skills to list.[/dim]\n")
+
     # Initialize conversation
     conversation = Conversation(
         model=effective_model,
         config=config,
     )
-    conversation.add_system_message(get_default_system_prompt(os.getcwd()))
+    conversation.add_system_message(get_default_system_prompt(os.getcwd(), skills_section))
 
     # Get tools
     tools = tool_registry.get_openai_tools()

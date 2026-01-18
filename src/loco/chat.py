@@ -114,9 +114,9 @@ class Conversation:
             self.messages.append(system_msg)
 
 
-def get_default_system_prompt(cwd: str) -> str:
+def get_default_system_prompt(cwd: str, skills_section: str = "") -> str:
     """Get the default system prompt for loco."""
-    return f"""You are a helpful coding assistant running in a terminal. You help users with software engineering tasks.
+    base_prompt = f"""You are a helpful coding assistant running in a terminal. You help users with software engineering tasks.
 
 Current working directory: {cwd}
 
@@ -137,6 +137,11 @@ Available tools:
 - bash: Execute a bash command
 - glob: Find files matching a pattern (e.g., '**/*.py')
 - grep: Search file contents with regex"""
+
+    if skills_section:
+        base_prompt += f"\n{skills_section}"
+
+    return base_prompt
 
 
 def stream_response(
