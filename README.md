@@ -236,6 +236,18 @@ pip install -e .
 
 ---
 
+## 📚 Documentation
+
+For comprehensive guides and documentation, see:
+
+- **[Full Documentation](https://showdownlabs.github.io/loco/)** — Complete docs site
+- **[Quick Start Guide](docs/QUICKSTART.md)** — Hands-on examples and workflows
+- **[Architecture Guide](docs/ARCHITECTURE.md)** — How loco works under the hood
+- **[Technical Analysis](docs/ANALYSIS.md)** — Deep dive into design and implementation
+- **[MCP Guide](docs/MCP.md)** — Model Context Protocol integration
+
+---
+
 ## 📄 License
 
 MIT © [Showdown Labs](https://github.com/showdownlabs)

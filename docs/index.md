@@ -371,6 +371,30 @@ If you run a LiteLLM proxy server:
 
 ---
 
+## Documentation
+
+### 📘 Guides
+
+- **[Quick Start Guide](QUICKSTART.md)** — Hands-on examples and workflows to get started quickly
+- **[Architecture & Flow](ARCHITECTURE.md)** — Detailed diagrams showing how loco processes requests
+- **[Technical Analysis](ANALYSIS.md)** — Deep dive into loco's design, patterns, and implementation
+
+### 🔗 MCP (Model Context Protocol)
+
+- **[MCP Guide](MCP.md)** — Comprehensive guide to MCP server and client functionality
+- **[MCP Quick Reference](MCP_QUICK_REFERENCE.md)** — Quick reference for MCP features
+- **[MCP Implementation](MCP_IMPLEMENTATION_SUMMARY.md)** — Implementation details and technical notes
+- **[MCP Feature Complete](MCP_FEATURE_COMPLETE.md)** — Full feature implementation summary
+
+### 📂 Examples
+
+- **Skills** — See `examples/skills/` for code-reviewer, test-writer, debugger
+- **Agents** — See `examples/agents/` for explorer, planner, refactor
+- **Hooks** — See `examples/hooks/` for safety and formatting hooks
+- **MCP** — See `examples/mcp/` for MCP server configurations
+
+---
+
 ## License
 
 MIT © [Showdown Labs](https://github.com/showdownlabs)
