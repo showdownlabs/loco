@@ -27,6 +27,15 @@ class ToolsConfig(BaseModel):
     require_confirmation: bool = False
 
 
+class MCPServerConfig(BaseModel):
+    """Configuration for an external MCP server."""
+
+    command: list[str]
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    cwd: str | None = None
+
+
 class Config(BaseModel):
     """Main configuration for loco."""
 
@@ -40,6 +49,7 @@ class Config(BaseModel):
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     hooks: dict[str, Any] = Field(default_factory=dict)
+    mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     system_prompt: str | None = None
 
 

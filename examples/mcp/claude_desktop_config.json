@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "loco": {
+      "command": "loco",
+      "args": ["mcp-server"]
+    }
+  }
+}

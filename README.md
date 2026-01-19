@@ -33,6 +33,7 @@ That's it. Loco creates a config file on first run at `~/.config/loco/config.jso
 |---------|-------------|
 | 🔌 **100+ Providers** | OpenAI, Bedrock, OpenRouter, Ollama, LM Studio, Azure, and more |
 | 🛠️ **Built-in Tools** | Read, Write, Edit, Bash, Glob, Grep |
+| 🔗 **MCP Support** | Model Context Protocol server & client |
 | 🎯 **Skills** | Reusable prompts for specific tasks |
 | 🪝 **Hooks** | Pre/post tool execution scripts |
 | 🤖 **Agents** | Subagents with isolated contexts |
@@ -100,6 +101,8 @@ Loco includes 6 built-in tools:
 | `bash` | Execute shell commands |
 | `glob` | Find files by pattern (`**/*.py`) |
 | `grep` | Search file contents with regex |
+
+**MCP Integration:** Loco can also connect to external MCP servers to access additional tools (databases, APIs, etc.). See [docs/MCP.md](docs/MCP.md).
 
 ---
 
@@ -179,6 +182,33 @@ You quickly find information in codebases...
 ```
 
 **Examples:** See `examples/agents/` for explorer, planner, refactor.
+
+---
+
+## 🔗 MCP (Model Context Protocol)
+
+Loco supports MCP both as a server and a client:
+
+**As MCP Server:** Expose loco's tools to other MCP clients like Claude Desktop.
+
+```bash
+loco mcp-server
+```
+
+**As MCP Client:** Connect to external MCP servers to expand capabilities.
+
+```json
+{
+  "mcp_servers": {
+    "github": {
+      "command": ["npx"],
+      "args": ["-y", "@modelcontextprotocol/server-github"]
+    }
+  }
+}
+```
+
+**Learn more:** [docs/MCP.md](docs/MCP.md) | [examples/mcp/](examples/mcp/)
 
 ---
 

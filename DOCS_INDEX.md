@@ -100,6 +100,7 @@ Detailed visual representations of how LoCo processes requests and executes tool
 - **Agents**: [LOCO_ANALYSIS.md](./LOCO_ANALYSIS.md#3-agent-system)
 - **Hooks**: [LOCO_ANALYSIS.md](./LOCO_ANALYSIS.md#4-hooks-system)
 - **Sessions**: [LOCO_ANALYSIS.md](./LOCO_ANALYSIS.md#5-session-management)
+- **MCP Integration**: [docs/MCP.md](./docs/MCP.md)
 
 ### Architecture
 - **High-Level Design**: [TOOL_FLOW.md](./TOOL_FLOW.md#high-level-architecture)

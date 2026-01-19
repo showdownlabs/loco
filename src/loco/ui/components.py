@@ -170,11 +170,15 @@ class StreamingMarkdown:
 
     def __exit__(self, *args: Any) -> None:
         if self._live:
-            # Final render
-            if self.content:
-                self._live.update(Markdown(self.content))
-            self._live.__exit__(*args)
-            self._live = None
+            try:
+                # Don't do final update - content is already rendered during streaming
+                # Just clean up the Live context
+                self._live.__exit__(*args)
+            except (BlockingIOError, BrokenPipeError):
+                # Ignore I/O errors on exit - content was already displayed
+                pass
+            finally:
+                self._live = None
 
     def update(self, content: str) -> None:
         """Update the streaming content."""

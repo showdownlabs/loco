@@ -439,5 +439,42 @@ def config(key: str | None, value: str | None) -> None:
         click.echo(f"Cannot set config key: {key}", err=True)
 
 
+@main.command()
+def mcp_server() -> None:
+    """Run loco as an MCP server (exposes tools via stdio).
+    
+    This allows other MCP clients (like Claude Desktop) to use loco's tools.
+    
+    Example configuration for Claude Desktop (~/.config/claude/claude_desktop_config.json):
+    
+    \b
+    {
+      "mcpServers": {
+        "loco": {
+          "command": "loco",
+          "args": ["mcp-server"]
+        }
+      }
+    }
+    """
+    import asyncio
+    from loco.mcp.server import MCPServer
+    from loco.tools import (
+        ReadTool, WriteTool, EditTool, BashTool, GlobTool, GrepTool
+    )
+    
+    # Register all loco tools
+    server = MCPServer(name="loco", version=__version__)
+    server.register_tool(ReadTool())
+    server.register_tool(WriteTool())
+    server.register_tool(EditTool())
+    server.register_tool(BashTool())
+    server.register_tool(GlobTool())
+    server.register_tool(GrepTool())
+    
+    # Run the server
+    asyncio.run(server.run())
+
+
 if __name__ == "__main__":
     main()
