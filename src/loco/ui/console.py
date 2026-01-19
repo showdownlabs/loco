@@ -6,6 +6,9 @@ from typing import Any
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.filters import Condition
+from prompt_toolkit.application import get_app
 from rich.console import Console as RichConsole
 from rich.live import Live
 from rich.markdown import Markdown
@@ -34,12 +37,31 @@ class Console:
         self.prompt_style = Style.from_dict({
             "prompt": "bold ansibrightcyan",
             "prompt-suffix": "",
+            "separator": "ansibrightblack",
         })
+
+        # Create key bindings that work like Claude Code
+        # - Enter submits (like single-line mode)  
+        # - Alt+Enter adds a newline (for explicit multi-line)
+        # - Pasting multiline content works
+        kb = KeyBindings()
+
+        @kb.add('enter')
+        def _(event):
+            """Enter submits the input."""
+            event.current_buffer.validate_and_handle()
+
+        @kb.add('escape', 'enter')
+        def _(event):
+            """Alt+Enter inserts a newline for multiline input."""
+            event.current_buffer.insert_text('\n')
 
         self.prompt_session: PromptSession[str] = PromptSession(
             history=FileHistory(str(history_file)),
             style=self.prompt_style,
-            multiline=False,
+            multiline=True,  # Allow multiline (for pasting), but Enter submits
+            key_bindings=kb,
+            prompt_continuation="  ",  # Continuation prompt for multiline
         )
 
     def print(self, *args: Any, **kwargs: Any) -> None:
@@ -83,26 +105,65 @@ class Console:
         self.console.print(f"[dim]cwd:[/dim] {cwd}")
         self.console.print(f"[dim]model:[/dim] {model}")
         self.console.print()
-        self.console.print("[dim]/help for commands · ctrl+c to exit[/dim]")
+        self.console.print("[dim]/help for commands · alt+enter for newline · ctrl+c to exit[/dim]")
         self.console.print()
 
     def get_input(self, prompt: str = "> ") -> str | None:
         """Get user input with prompt toolkit."""
         try:
+            # Print top separator line (Claude Code style)
+            self.console.print()
+            self.console.print("[dim]" + "─" * self.console.width + "[/dim]")
+
             # Use formatted prompt with style
-            return self.prompt_session.prompt(
+            result = self.prompt_session.prompt(
                 [("class:prompt", prompt), ("", " ")],
             )
+
+            # Print bottom separator line (only if we got input)
+            if result is not None:
+                self.console.print("[dim]" + "─" * self.console.width + "[/dim]")
+
+                # Check if pasted content (multiline)
+                if '\n' in result:
+                    line_count = result.count('\n') + 1
+                    self.console.print(f"[dim]Pasted {line_count} lines[/dim]")
+                self.console.print()
+
+            return result
         except (EOFError, KeyboardInterrupt):
             return None
 
     def get_multiline_input(self, prompt: str = "> ") -> str | None:
-        """Get multiline user input (Ctrl+D to submit)."""
+        """Get multiline user input (Meta+Enter or Esc+Enter to submit)."""
         try:
-            return self.prompt_session.prompt(
+            # Create temporary key bindings for explicit multiline mode
+            kb = KeyBindings()
+
+            @kb.add('enter')
+            def _(event):
+                """Enter inserts a newline in multiline mode."""
+                event.current_buffer.insert_text('\n')
+
+            @kb.add('escape', 'enter')  # Alt/Meta+Enter to submit
+            def _(event):
+                """Alt+Enter submits."""
+                event.current_buffer.validate_and_handle()
+
+            # Print top separator line
+            self.console.print("[dim]" + "─" * self.console.width + "[/dim]")
+            self.console.print("[dim]Alt+Enter to submit, Enter for new line[/dim]")
+
+            result = self.prompt_session.prompt(
                 [("class:prompt", prompt)],
                 multiline=True,
+                key_bindings=kb,
             )
+
+            # Print bottom separator line
+            self.console.print("[dim]" + "─" * self.console.width + "[/dim]")
+
+            return result
         except (EOFError, KeyboardInterrupt):
             return None
 

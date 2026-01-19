@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import click
-from rich.console import Console
+from rich.console import Console as RichConsole
 
 from loco import __version__
 from loco.chat import Conversation, ToolCall, chat_turn, get_default_system_prompt
@@ -17,7 +17,7 @@ from loco.config import (
     save_config,
 )
 from loco.tools import tool_registry
-from loco.ui.console import get_console
+from loco.ui.console import get_console, Console
 from loco.history import save_conversation, load_conversation, list_sessions
 from loco.skills import skill_registry, get_skills_system_prompt_section, Skill
 from loco.hooks import HookConfig
@@ -633,7 +633,7 @@ def main(ctx: click.Context, model: str | None, cwd: str | None) -> None:
 
             # Handle slash commands
             if user_input.startswith("/"):
-                if handle_slash_command(user_input, conversation, config, rich_console):
+                if handle_slash_command(user_input, conversation, config, console):
                     continue
                 else:
                     console.print_error(f"Unknown command: {user_input.split()[0]}")
