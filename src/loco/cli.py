@@ -80,6 +80,10 @@ def handle_slash_command(
   [cyan]/config[/cyan]           Show configuration file path
   [cyan]/quit[/cyan]             Exit loco (or Ctrl+C)
 
+[bold]Bash Commands:[/bold]
+  Prefix commands with [cyan]![/cyan] to execute them as shell commands
+  Examples: [cyan]! ls -la[/cyan], [cyan]! git status[/cyan], [cyan]! pwd[/cyan]
+
 [bold]Custom Commands:[/bold]
   Commands can be invoked directly via [cyan]/<command-name>[/cyan]
   Examples: [cyan]/commit[/cyan], [cyan]/pr[/cyan] (if commands are installed)
@@ -660,8 +664,10 @@ def main(ctx: click.Context, model: str | None, cwd: str | None, bash: bool) -> 
 
     An AI-powered coding assistant that works with any OpenAI-compatible LLM.
 
-    When --bash mode is enabled, the prompt changes from '>' to '!' and commands
-    are executed directly as shell commands instead of being sent to the LLM.
+    Supports multiple interaction modes:
+    - Regular chat: Just type your message
+    - Bash commands: Prefix with ! (e.g., ! ls -la)
+    - Slash commands: Use / for special commands (e.g., /help, /commit)
     """
     # If a subcommand is invoked, let it handle things
     if ctx.invoked_subcommand is not None:
@@ -689,10 +695,6 @@ def main(ctx: click.Context, model: str | None, cwd: str | None, bash: bool) -> 
     # Initialize UI
     console = get_console()
     rich_console = console.console
-
-    # Track bash mode
-    global _bash_mode
-    _bash_mode = bash
     
     # Print welcome
     console.print_welcome(effective_model, os.getcwd())
@@ -724,9 +726,8 @@ def main(ctx: click.Context, model: str | None, cwd: str | None, bash: bool) -> 
     # Main loop
     while True:
         try:
-            # Determine prompt based on bash mode
-            prompt = "!" if _bash_mode else "> "
-            user_input = console.get_input(prompt)
+            # Always use > prompt, detect mode from input prefix
+            user_input = console.get_input("> ")
 
             if user_input is None:
                 # Ctrl+C or Ctrl+D
@@ -738,7 +739,7 @@ def main(ctx: click.Context, model: str | None, cwd: str | None, bash: bool) -> 
             if not user_input:
                 continue
 
-            # Handle slash commands
+            # Handle slash commands first
             if user_input.startswith("/"):
                 if handle_slash_command(user_input, conversation, config, console):
                     continue
@@ -747,12 +748,20 @@ def main(ctx: click.Context, model: str | None, cwd: str | None, bash: bool) -> 
                     console.print("[dim]Type /help for available commands[/dim]")
                     continue
 
-            # Handle bash mode - execute as shell command if bash mode is enabled
-            if _bash_mode:
+            # Handle ! prefix for bash commands (inline bash mode)
+            if user_input.startswith("!"):
+                # Remove the ! prefix and execute as bash command
+                bash_command = user_input[1:].strip()
+                
+                if not bash_command:
+                    console.print("[yellow]Usage: ! <command>[/yellow]")
+                    console.print("[dim]Example: ! ls -la[/dim]")
+                    continue
+                
                 try:
                     # Execute bash command and capture output
                     result = subprocess.run(
-                        user_input,
+                        bash_command,
                         shell=True,
                         capture_output=True,
                         text=True,
@@ -765,14 +774,14 @@ def main(ctx: click.Context, model: str | None, cwd: str | None, bash: bool) -> 
                     if result.stderr:
                         console.print(f"[red]{result.stderr}[/red]", end="")
                     
-                    # Show exit code
+                    # Show exit code if non-zero
                     if result.returncode != 0:
                         console.print(f"[dim]Exit code: {result.returncode}[/dim]")
                 except Exception as e:
                     console.print_error(f"Error executing command: {e}")
                 continue
 
-            # Regular chat
+            # Regular chat with AI agent
             try:
                 chat_turn(
                     conversation=conversation,
