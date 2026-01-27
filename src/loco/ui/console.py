@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 from prompt_toolkit.key_binding import KeyBindings
@@ -128,7 +129,10 @@ class Console:
         def _(event):
             """Shift+Tab cycles through input modes."""
             self.cycle_mode()
-            # Signal that mode changed - the prompt will update on next get_input
+            # Update the session style for new mode
+            self.prompt_session.style = self.prompt_style
+            # Force prompt to redraw with new mode
+            event.app.invalidate()
 
         # Continuation prompt aligns with the input after padding + "> "
         continuation = " " * (self.PADDING + 2)
@@ -221,43 +225,44 @@ class Console:
 
     def get_input(self, prompt: str | None = None) -> tuple[str | None, InputMode]:
         """Get user input with prompt toolkit.
-        
+
         Returns:
             A tuple of (input_text, mode) where mode is the InputMode that was active.
             input_text is None if the user cancelled (Ctrl+C/Ctrl+D).
         """
         try:
-            # Update prompt style for current mode
-            self._update_prompt_style()
-            
-            # Get mode-specific prompt and styling
-            mode_prompt = prompt if prompt is not None else self._get_mode_prompt()
-            mode_hint = self._get_mode_hint()
-            mode_color = self._get_mode_color()
-            
-            # Print top separator line with mode color
+            # Print top separator line
             self.console.print()
-            if self._current_mode == InputMode.CHAT:
-                self.console.print(self._separator())
-            else:
-                self._print_colored_separator()
+            self.console.print(self._separator())
 
-            # Use formatted prompt with style and padding
+            # Create dynamic prompt function that reads current mode
             padding = " " * self.PADDING
+
+            def get_prompt() -> FormattedText:
+                """Dynamic prompt that updates when mode changes."""
+                mode_symbol = prompt if prompt is not None else self._get_mode_prompt()
+                return FormattedText([
+                    ("", padding),
+                    ("class:prompt", mode_symbol),
+                    ("", " "),
+                ])
+
+            # Update style for current mode before prompting
+            self._update_prompt_style()
+            self.prompt_session.style = self.prompt_style
+
             result = self.prompt_session.prompt(
-                [("", padding), ("class:prompt", mode_prompt), ("", " ")],
-                style=self.prompt_style,  # Use updated style
+                get_prompt,  # Pass callable for dynamic prompt
             )
 
             # Print bottom separator line (only if we got input)
             if result is not None:
-                if self._current_mode == InputMode.CHAT:
-                    self.console.print(self._separator())
-                else:
-                    self._print_colored_separator()
+                self.console.print(self._separator())
 
                 # Show mode hint if not in default chat mode
+                mode_hint = self._get_mode_hint()
                 if mode_hint:
+                    mode_color = self._get_mode_color()
                     hint_text = Text()
                     hint_text.append(" " * self.PADDING)
                     hint_text.append(mode_hint, style=mode_color)
