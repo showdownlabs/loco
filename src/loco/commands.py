@@ -70,26 +70,41 @@ class CommandRegistry:
         self._discovered = True
 
     def _load_commands_from_dir(self, commands_dir: Path) -> None:
-        """Load all commands from a directory."""
+        """Load all commands from a directory.
+        
+        Supports two formats:
+        1. Subdirectories: commands/command-name/COMMAND.md
+        2. Flat files: commands/command-name.md (for Claude Desktop compatibility)
+        """
         if not commands_dir.exists():
             return
 
-        # Commands are in subdirectories: commands/command-name/COMMAND.md
-        for command_dir in commands_dir.iterdir():
-            if not command_dir.is_dir():
+        for item in commands_dir.iterdir():
+            # Skip hidden files
+            if item.name.startswith('.'):
                 continue
-
-            command_file = command_dir / "COMMAND.md"
-            if not command_file.exists():
-                continue
-
-            try:
-                command = self._parse_command_file(command_file)
-                if command:
-                    self.commands[command.name] = command
-            except Exception as e:
-                # Log but don't fail on individual command errors
-                print(f"Warning: Failed to load command from {command_file}: {e}")
+                
+            # Format 1: Subdirectories with COMMAND.md
+            if item.is_dir():
+                command_file = item / "COMMAND.md"
+                if command_file.exists():
+                    try:
+                        command = self._parse_command_file(command_file)
+                        if command:
+                            self.commands[command.name] = command
+                    except Exception as e:
+                        # Log but don't fail on individual command errors
+                        print(f"Warning: Failed to load command from {command_file}: {e}")
+            
+            # Format 2: Flat .md files (Claude Desktop compatibility)
+            elif item.suffix == '.md':
+                try:
+                    command = self._parse_command_file(item)
+                    if command:
+                        self.commands[command.name] = command
+                except Exception as e:
+                    # Log but don't fail on individual command errors
+                    print(f"Warning: Failed to load command from {item}: {e}")
 
     def _parse_command_file(self, path: Path) -> Command | None:
         """Parse a COMMAND.md file into a Command object."""
@@ -110,7 +125,10 @@ class CommandRegistry:
                 body = match.group(2)
 
         # Extract required fields
-        name = frontmatter.get("name", path.parent.name)
+        # For flat files (command-name.md), use the filename as the name
+        # For subdirectory format (command-name/COMMAND.md), use the parent directory name
+        default_name = path.stem if path.name != "COMMAND.md" else path.parent.name
+        name = frontmatter.get("name", default_name)
         description = frontmatter.get("description", "")
 
         if not description:

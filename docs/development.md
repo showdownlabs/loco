@@ -193,9 +193,24 @@ loco/
 
 ### Adding a Custom Command
 
+Commands can be created in two formats:
+
+**Format 1: Subdirectory (recommended for complex commands)**
 1. Create directory: `.loco/commands/mycommand/`
 2. Add `COMMAND.md` with instructions
 3. Command is auto-discovered on startup
+
+**Format 2: Flat file (for Claude Desktop compatibility)**
+1. Create file: `.loco/commands/mycommand.md` or `.claude/commands/mycommand.md`
+2. Add command content with optional YAML frontmatter
+3. Command is auto-discovered on startup
+
+Both formats support the same YAML frontmatter options:
+- `name`: Command name (defaults to directory/filename)
+- `description`: Short description
+- `allowed-tools`: Tool restrictions
+- `model`: Specific model to use
+- `user-invocable`: Whether user can invoke directly (default: true)
 
 ### Debugging
 
