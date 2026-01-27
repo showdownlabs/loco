@@ -1,6 +1,7 @@
 """Console wrapper for Rich-based terminal UI."""
 
 import sys
+from enum import Enum
 from typing import Any
 
 from prompt_toolkit import PromptSession
@@ -20,6 +21,39 @@ from rich.text import Text
 from loco.config import get_config_dir
 
 
+class InputMode(Enum):
+    """Input modes for the TUI."""
+    CHAT = "chat"       # Normal AI chat mode
+    BASH = "bash"       # Direct bash command execution
+    # Future modes can be added here:
+    # PLAN = "plan"     # Planning mode
+    # EDIT = "edit"     # Edit acceptance mode
+
+
+# Mode configuration: prompt symbol, color, hint text
+MODE_CONFIG = {
+    InputMode.CHAT: {
+        "symbol": ">",
+        "color": "ansibrightcyan",
+        "rich_color": "bright_cyan",
+        "hint": "",  # No hint for default mode
+    },
+    InputMode.BASH: {
+        "symbol": "!",
+        "color": "ansibrightyellow",
+        "rich_color": "bright_yellow",
+        "hint": "! bash mode (shift+Tab to cycle)",
+    },
+    # Future modes:
+    # InputMode.PLAN: {
+    #     "symbol": "⏸",
+    #     "color": "ansibrightmagenta",
+    #     "rich_color": "bright_magenta",
+    #     "hint": "⏸ plan mode (shift+Tab to cycle)",
+    # },
+}
+
+
 class Console:
     """Wrapper around Rich console with loco-specific functionality."""
 
@@ -28,7 +62,36 @@ class Console:
 
     def __init__(self) -> None:
         self.console = RichConsole()
+        self._current_mode = InputMode.CHAT
         self._setup_prompt_session()
+
+    @property
+    def current_mode(self) -> InputMode:
+        """Get the current input mode."""
+        return self._current_mode
+
+    @current_mode.setter
+    def current_mode(self, mode: InputMode) -> None:
+        """Set the current input mode and update prompt style."""
+        self._current_mode = mode
+        self._update_prompt_style()
+
+    def cycle_mode(self) -> InputMode:
+        """Cycle to the next input mode."""
+        modes = list(InputMode)
+        current_index = modes.index(self._current_mode)
+        next_index = (current_index + 1) % len(modes)
+        self.current_mode = modes[next_index]
+        return self._current_mode
+
+    def _update_prompt_style(self) -> None:
+        """Update prompt style based on current mode."""
+        mode_cfg = MODE_CONFIG[self._current_mode]
+        self.prompt_style = Style.from_dict({
+            "prompt": f"bold {mode_cfg['color']}",
+            "prompt-suffix": "",
+            "separator": "ansibrightblack",
+        })
 
     def _setup_prompt_session(self) -> None:
         """Set up the prompt toolkit session with history."""
@@ -36,33 +99,36 @@ class Console:
         history_dir.mkdir(parents=True, exist_ok=True)
         history_file = history_dir / "prompt_history"
 
-        # Claude Code-style prompt: bold > with subtle styling
-        self.prompt_style = Style.from_dict({
-            "prompt": "bold ansibrightcyan",
-            "prompt-suffix": "",
-            "separator": "ansibrightblack",
-        })
+        # Initialize prompt style based on current mode
+        self._update_prompt_style()
 
         # Create key bindings that work like Claude Code
         # - Enter submits (like single-line mode)
         # - Shift+Enter or Alt+Enter adds a newline (for explicit multi-line)
+        # - Shift+Tab cycles through modes
         # - Pasting multiline content works
-        kb = KeyBindings()
+        self.kb = KeyBindings()
 
-        @kb.add('enter')
+        @self.kb.add('enter')
         def _(event):
             """Enter submits the input."""
             event.current_buffer.validate_and_handle()
 
-        @kb.add('c-j')
+        @self.kb.add('c-j')
         def _(event):
             """Ctrl+J inserts a newline for multiline input."""
             event.current_buffer.insert_text('\n')
 
-        @kb.add('escape', 'enter')
+        @self.kb.add('escape', 'enter')
         def _(event):
             """Alt+Enter inserts a newline for multiline input."""
             event.current_buffer.insert_text('\n')
+
+        @self.kb.add('s-tab')
+        def _(event):
+            """Shift+Tab cycles through input modes."""
+            self.cycle_mode()
+            # Signal that mode changed - the prompt will update on next get_input
 
         # Continuation prompt aligns with the input after padding + "> "
         continuation = " " * (self.PADDING + 2)
@@ -70,7 +136,7 @@ class Console:
             history=FileHistory(str(history_file)),
             style=self.prompt_style,
             multiline=True,  # Allow multiline (for pasting), but Enter submits
-            key_bindings=kb,
+            key_bindings=self.kb,
             prompt_continuation=continuation,
         )
 
@@ -126,25 +192,76 @@ class Console:
         self.console.print(self._pad(f"[dim]cwd:[/dim] {cwd}"))
         self.console.print(self._pad(f"[dim]model:[/dim] {model}"))
         self.console.print()
-        self.console.print(self._pad("[dim]/help for commands · ctrl+j for newline · ctrl+c to exit[/dim]"))
+        self.console.print(self._pad("[dim]/help for commands · shift+tab for modes · ctrl+c to exit[/dim]"))
         self.console.print()
 
-    def get_input(self, prompt: str = "> ") -> str | None:
-        """Get user input with prompt toolkit."""
+    def _get_mode_prompt(self) -> str:
+        """Get the prompt symbol for the current mode."""
+        return MODE_CONFIG[self._current_mode]["symbol"]
+
+    def _get_mode_hint(self) -> str:
+        """Get the hint text for the current mode."""
+        return MODE_CONFIG[self._current_mode]["hint"]
+
+    def _get_mode_color(self) -> str:
+        """Get the Rich color for the current mode."""
+        return MODE_CONFIG[self._current_mode]["rich_color"]
+
+    def _print_colored_separator(self) -> None:
+        """Print a separator line with the current mode's color."""
+        padding = " " * self.PADDING
+        line_width = max(1, self.console.width - (self.PADDING * 2))
+        color = self._get_mode_color()
+
+        # Use Text object for robust color handling
+        separator_text = Text()
+        separator_text.append(padding)
+        separator_text.append('─' * line_width, style=color)
+        self.console.print(separator_text)
+
+    def get_input(self, prompt: str | None = None) -> tuple[str | None, InputMode]:
+        """Get user input with prompt toolkit.
+        
+        Returns:
+            A tuple of (input_text, mode) where mode is the InputMode that was active.
+            input_text is None if the user cancelled (Ctrl+C/Ctrl+D).
+        """
         try:
-            # Print top separator line (Claude Code style)
+            # Update prompt style for current mode
+            self._update_prompt_style()
+            
+            # Get mode-specific prompt and styling
+            mode_prompt = prompt if prompt is not None else self._get_mode_prompt()
+            mode_hint = self._get_mode_hint()
+            mode_color = self._get_mode_color()
+            
+            # Print top separator line with mode color
             self.console.print()
-            self.console.print(self._separator())
+            if self._current_mode == InputMode.CHAT:
+                self.console.print(self._separator())
+            else:
+                self._print_colored_separator()
 
             # Use formatted prompt with style and padding
             padding = " " * self.PADDING
             result = self.prompt_session.prompt(
-                [("", padding), ("class:prompt", prompt), ("", " ")],
+                [("", padding), ("class:prompt", mode_prompt), ("", " ")],
+                style=self.prompt_style,  # Use updated style
             )
 
             # Print bottom separator line (only if we got input)
             if result is not None:
-                self.console.print(self._separator())
+                if self._current_mode == InputMode.CHAT:
+                    self.console.print(self._separator())
+                else:
+                    self._print_colored_separator()
+
+                # Show mode hint if not in default chat mode
+                if mode_hint:
+                    hint_text = Text()
+                    hint_text.append(" " * self.PADDING)
+                    hint_text.append(mode_hint, style=mode_color)
+                    self.console.print(hint_text)
 
                 # Check if pasted content (multiline)
                 if '\n' in result:
@@ -152,9 +269,10 @@ class Console:
                     self.console.print(self._pad(f"[dim]Pasted {line_count} lines[/dim]"))
                 self.console.print()
 
-            return result
+            # Return both the input and the mode it was captured in
+            return result, self._current_mode
         except (EOFError, KeyboardInterrupt):
-            return None
+            return None, self._current_mode
 
     def get_multiline_input(self, prompt: str = "> ") -> str | None:
         """Get multiline user input (Meta+Enter or Esc+Enter to submit)."""
