@@ -247,12 +247,24 @@ class Console:
                     ("", " "),
                 ])
 
+            def get_rprompt() -> FormattedText:
+                """Dynamic right-side prompt showing current mode hint."""
+                mode_hint = self._get_mode_hint()
+                if mode_hint:
+                    # Use prompt_toolkit color format, dim style
+                    pt_color = MODE_CONFIG[self._current_mode]["color"]
+                    return FormattedText([
+                        (f"{pt_color} italic", mode_hint),
+                    ])
+                return FormattedText([])
+
             # Update style for current mode before prompting
             self._update_prompt_style()
             self.prompt_session.style = self.prompt_style
 
             result = self.prompt_session.prompt(
                 get_prompt,  # Pass callable for dynamic prompt
+                rprompt=get_rprompt,  # Show mode hint on right side of input line
             )
 
             # Print bottom separator line (only if we got input)
