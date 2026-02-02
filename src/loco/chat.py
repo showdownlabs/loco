@@ -10,6 +10,8 @@ import litellm
 from rich.console import Console
 from rich.markdown import Markdown
 
+from loco.telemetry import get_tracker, track_operation, OperationType
+
 # Drop unsupported params for models that don't support them (e.g., tool_choice on Bedrock Mistral)
 litellm.drop_params = True
 
@@ -279,6 +281,18 @@ def stream_response(
         )
         conversation.usage.add(stat)
 
+        # Track for cost profiling
+        tracker = get_tracker()
+        if tracker.enabled:
+            tracker.track_call(
+                model=conversation.model,
+                input_tokens=stat.prompt_tokens,
+                output_tokens=stat.completion_tokens,
+                cost=stat.cost,
+                cache_read_tokens=getattr(usage_data, 'cache_read_input_tokens', 0) or 0,
+                cache_write_tokens=getattr(usage_data, 'cache_creation_input_tokens', 0) or 0,
+            )
+
     # Yield tool calls
     for tc_data in tool_calls_data.values():
         try:
@@ -291,6 +305,18 @@ def stream_response(
             name=tc_data["function"]["name"],
             arguments=arguments,
         )
+
+
+def _get_operation_type_for_tool(tool_name: str) -> OperationType:
+    """Map tool name to operation type."""
+    mapping = {
+        "grep": OperationType.SEARCH_GREP,
+        "glob": OperationType.SEARCH_GLOB,
+        "read": OperationType.READ_FILE,
+        "edit": OperationType.GENERATION_EDIT,
+        "write": OperationType.GENERATION_CODE,
+    }
+    return mapping.get(tool_name.lower(), OperationType.UNKNOWN)
 
 
 def _display_usage_stats(conversation: Conversation, console: Console, turn_stats_only: bool = False) -> None:
@@ -408,7 +434,9 @@ def chat_turn(
             try:
                 # Create a modified ToolCall with potentially updated arguments
                 modified_tc = ToolCall(id=tc.id, name=tc.name, arguments=tool_input)
-                result = tool_executor(modified_tc)
+                op_type = _get_operation_type_for_tool(tc.name)
+                with track_operation(op_type):
+                    result = tool_executor(modified_tc)
                 success = True
             except Exception as e:
                 result = f"Error: {e}"
