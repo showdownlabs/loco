@@ -180,6 +180,7 @@ def stream_response(
         "messages": conversation.get_messages(),
         "stream": True,
         "stream_options": {"include_usage": True},  # Request usage data in stream
+        "drop_params": True,  # Automatically drop unsupported params for each provider
     }
 
     # Add provider-specific config
